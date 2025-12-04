@@ -145,4 +145,4 @@ Simplemente navegue a esta URL en su navegador web para ver la documentación de
 
 * **Metodo GET XLSX:**
 
-![Imagen8](/img8.png)
+![Imagen7](/img7.png)
