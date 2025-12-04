@@ -550,3 +550,370 @@ Simplemente navegue a esta URL en su navegador web para ver la documentación de
 * **Metodo GET XLSX:**
 
 ![Imagen8](/img8.png)
+
+
+---
+
+## 8. Documentación: Gestión y Exportación de Usuarios
+
+Esta sección detalla la implementación de la gestión de usuarios (CRUD) y su exportación a formatos Excel y PDF, siguiendo la misma arquitectura que la gestión de tareas.
+
+### 8.1. Exportación de Usuarios
+
+La exportación de usuarios utiliza las mismas librerías (**Apache POI** y **OpenPDF**) y sigue el patrón de diseño **Controller-Service-Exporter**.
+
+#### 8.1.1. Exportación a Excel (`UserExcelExporter`)
+
+Genera un archivo `.xlsx` con el listado de usuarios.
+
+```java
+package com.example.demo.export;
+
+import com.example.demo.model.User;
+import jakarta.servlet.ServletOutputStream;
+import jakarta.servlet.http.HttpServletResponse;
+import org.apache.poi.ss.usermodel.*;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+
+public class UserExcelExporter {
+
+    private final XSSFWorkbook workbook;
+    private Sheet sheet;
+    private final List<User> userList;
+
+    private static final String[] HEADERS = {"ID", "Nombre", "Email", "Teléfono"};
+
+    public UserExcelExporter(List<User> userList) {
+        this.userList = userList;
+        this.workbook = new XSSFWorkbook();
+    }
+
+    private CellStyle getHeaderStyle() {
+        CellStyle style = workbook.createCellStyle();
+        Font font = workbook.createFont();
+        font.setBold(true);
+        font.setFontHeightInPoints((short) 14);
+        style.setFont(font);
+        style.setFillForegroundColor(IndexedColors.LIGHT_BLUE.getIndex());
+        style.setFillPattern(FillPatternType.SOLID_FOREGROUND);
+        style.setBorderBottom(BorderStyle.MEDIUM);
+        style.setBorderTop(BorderStyle.MEDIUM);
+        style.setBorderLeft(BorderStyle.MEDIUM);
+        style.setBorderRight(BorderStyle.MEDIUM);
+        return style;
+    }
+
+    private CellStyle getTitleStyle() {
+        CellStyle style = workbook.createCellStyle();
+        Font font = workbook.createFont();
+        font.setBold(true);
+        font.setFontHeightInPoints((short) 18);
+        style.setFont(font);
+        style.setAlignment(HorizontalAlignment.CENTER);
+        return style;
+    }
+
+    private void writeHeader() {
+        sheet = workbook.createSheet("Usuarios");
+
+        // Título
+        Row titleRow = sheet.createRow(0);
+        Cell titleCell = titleRow.createCell(0);
+        titleCell.setCellValue("REPORTE DE USUARIOS - TaskMania");
+        titleCell.setCellStyle(getTitleStyle());
+        sheet.addMergedRegion(new org.apache.poi.ss.util.CellRangeAddress(0, 0, 0, HEADERS.length - 1));
+
+        // Fecha
+        Row dateRow = sheet.createRow(1);
+        Cell dateCell = dateRow.createCell(0);
+        dateCell.setCellValue("Fecha: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")));
+
+        // Cabecera de tabla
+        Row headerRow = sheet.createRow(3);
+        for (int col = 0; col < HEADERS.length; col++) {
+            Cell cell = headerRow.createCell(col);
+            cell.setCellValue(HEADERS[col]);
+            cell.setCellStyle(getHeaderStyle());
+        }
+    }
+
+    private void writeDataLines() {
+        int rowCount = 4;
+
+        CellStyle style = workbook.createCellStyle();
+        style.setBorderBottom(BorderStyle.THIN);
+        style.setBorderTop(BorderStyle.THIN);
+        style.setBorderLeft(BorderStyle.THIN);
+        style.setBorderRight(BorderStyle.THIN);
+
+        for (User user : userList) {
+            Row row = sheet.createRow(rowCount++);
+
+            // ID
+            Cell idCell = row.createCell(0);
+            idCell.setCellValue(user.getId());
+            idCell.setCellStyle(style);
+
+            // Nombre
+            Cell nombreCell = row.createCell(1);
+            nombreCell.setCellValue(user.getNombre());
+            nombreCell.setCellStyle(style);
+
+            // Email
+            Cell emailCell = row.createCell(2);
+            emailCell.setCellValue(user.getEmail());
+            emailCell.setCellStyle(style);
+
+            // Teléfono
+            Cell telefonoCell = row.createCell(3);
+            telefonoCell.setCellValue(user.getTelefono() != null ? user.getTelefono() : "N/A");
+            telefonoCell.setCellStyle(style);
+        }
+
+        // Autoajustar columnas
+        for (int i = 0; i < HEADERS.length; i++) {
+            sheet.autoSizeColumn(i);
+        }
+    }
+
+    public void export(HttpServletResponse response) throws IOException {
+        try {
+            writeHeader();
+            writeDataLines();
+
+            ServletOutputStream outputStream = response.getOutputStream();
+            workbook.write(outputStream);
+            workbook.close();
+            outputStream.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+            throw new IOException("Error al generar Excel: " + e.getMessage());
+        }
+    }
+}
+```
+
+#### 8.1.2. Exportación a PDF (`UserPDFExporter`)
+
+Genera un archivo `.pdf` con el listado de usuarios.
+
+```java
+package com.example.demo.export;
+
+import com.example.demo.model.User;
+import com.lowagie.text.*;
+import com.lowagie.text.pdf.PdfPCell;
+import com.lowagie.text.pdf.PdfPTable;
+import com.lowagie.text.pdf.PdfWriter;
+import jakarta.servlet.http.HttpServletResponse;
+
+import java.awt.Color;
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
+
+public class UserPDFExporter {
+
+    private final List<User> userList;
+
+    public UserPDFExporter(List<User> userList) {
+        this.userList = userList;
+    }
+
+    private void writeTableHeader(PdfPTable table) {
+        String[] headers = {"ID", "Nombre", "Email", "Teléfono"};
+
+        for (String header : headers) {
+            PdfPCell cell = new PdfPCell();
+            cell.setBackgroundColor(Color.LIGHT_GRAY);
+            cell.setPadding(5);
+            cell.setPhrase(new Phrase(header, FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12)));
+            table.addCell(cell);
+        }
+    }
+
+    private void writeTableData(PdfPTable table) {
+        Font font = FontFactory.getFont(FontFactory.HELVETICA, 10);
+
+        for (User user : userList) {
+            table.addCell(new Phrase(String.valueOf(user.getId()), font));
+            table.addCell(new Phrase(user.getNombre(), font));
+            table.addCell(new Phrase(user.getEmail(), font));
+            table.addCell(new Phrase(user.getTelefono() != null ? user.getTelefono() : "N/A", font));
+        }
+    }
+
+    public void export(HttpServletResponse response) throws IOException {
+        Document document = new Document(PageSize.A4);
+
+        try {
+            PdfWriter.getInstance(document, response.getOutputStream());
+            document.open();
+
+            // Título
+            Font titleFont = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 20);
+            Paragraph title = new Paragraph("REPORTE DE USUARIOS", titleFont);
+            title.setAlignment(Element.ALIGN_CENTER);
+            document.add(title);
+            document.add(Chunk.NEWLINE);
+
+            // Fecha
+            Font dateFont = FontFactory.getFont(FontFactory.HELVETICA, 10);
+            Paragraph date = new Paragraph(
+                    "Generado: " + LocalDateTime.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")),
+                    dateFont
+            );
+            date.setAlignment(Element.ALIGN_RIGHT);
+            document.add(date);
+            document.add(Chunk.NEWLINE);
+
+            // Tabla
+            PdfPTable table = new PdfPTable(4);
+            table.setWidthPercentage(100);
+            table.setSpacingBefore(10f);
+            table.setWidths(new float[]{1f, 3f, 4f, 2f});
+
+            writeTableHeader(table);
+            writeTableData(table);
+
+            document.add(table);
+
+        } catch (DocumentException e) {
+            throw new IOException("Error al generar PDF: " + e.getMessage());
+        } finally {
+            if (document.isOpen()) {
+                document.close();
+            }
+        }
+    }
+}
+```
+
+### 8.2. Controlador de Usuarios (`UserController`)
+
+El `UserController` expone los endpoints para la gestión de usuarios (Crear, Leer, Actualizar, Eliminar) y para la exportación.
+
+#### 8.2.1. Endpoints de Exportación
+
+```java
+    // EXPORTACIÓN (específicos)
+    @GetMapping("/export/excel")
+    @Operation(summary = "Exportar usuarios a Excel", description = "Descarga un archivo XLSX con todos los usuarios")
+    public void exportToExcel(HttpServletResponse response) throws IOException {
+        System.out.println("Exportando usuarios a Excel...");
+
+        response.setContentType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+        DateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
+        String currentDateTime = dateFormatter.format(new Date());
+
+        response.setHeader("Content-Disposition",
+                "attachment; filename=usuarios_excel_" + currentDateTime + ".xlsx");
+
+        List<User> listUsers = service.listarEntidades();
+        System.out.println("Total usuarios encontrados: " + listUsers.size());
+
+        UserExcelExporter exporter = new UserExcelExporter(listUsers);
+        exporter.export(response);
+    }
+
+    @GetMapping("/export/pdf")
+    @Operation(summary = "Exportar usuarios a PDF", description = "Descarga un archivo PDF con todos los usuarios")
+    public void exportToPDF(HttpServletResponse response) throws DocumentException, IOException {
+        System.out.println("Exportando usuarios a PDF...");
+
+        response.setContentType("application/pdf");
+        DateFormat dateFormatter = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
+        String currentDateTime = dateFormatter.format(new Date());
+
+        response.setHeader("Content-Disposition",
+                "attachment; filename=usuarios_pdf_" + currentDateTime + ".pdf");
+
+        List<User> listUsers = service.listarEntidades();
+        System.out.println("Total usuarios encontrados: " + listUsers.size());
+
+        UserPDFExporter exporter = new UserPDFExporter(listUsers);
+        exporter.export(response);
+    }
+```
+
+#### 8.2.2. Endpoints CRUD
+
+```java
+    @PostMapping
+    @Operation(summary = "Crear un usuario", description = "Crea un nuevo usuario y lo retorna")
+    @ApiResponse(responseCode = "200", description = "Usuario creado exitosamente")
+    public UserResponse crear(@RequestBody UserRequest request) {
+        return service.crear(request);
+    }
+
+    @PutMapping("/{id}")
+    @Operation(summary = "Actualizar un usuario", description = "Actualiza un usuario existente")
+    public UserResponse actualizar(
+            @Parameter(description = "ID del usuario a actualizar", example = "1")
+            @PathVariable Long id,
+            @RequestBody UserRequest request) {
+        return service.actualizar(id, request);
+    }
+```
+
+### 8.3. Resultado Final (Capturas de Pantalla)
+
+A continuación se muestran las capturas de pantalla de la funcionalidad de usuarios.
+
+* **Exportación PDF Usuarios:**
+
+![Imagen9](/img11.png)
+
+* **Exportación Excel Usuarios:**
+
+![Imagen10](/img12.png)
+
+* **Formulario Crear Usuario:**
+
+![Imagen11](/img13.png)
+
+* **Formulario Editar Usuario:**
+
+![Imagen12](/img14.png)
+
+* **Listado de Usuarios:**
+
+![Imagen13](/img15.png)
+
+### Pantallazos de Swagger:
+
+![Imagen1](/img16.png)
+
+* **Metodo GET:**
+
+![Imagen6](/img17.png)
+
+* **Metodo GET{id}:**
+
+![Imagen2](/img18.png)
+
+* **Metodo POST:**
+
+![Imagen3](/img19.png)
+
+* **Metodo PUT:**
+
+![Imagen4](/img20.png)
+
+* **Metodo DELETE:**
+
+![Imagen5](/img21.png)
+
+ **Metodo GET PDF:**
+
+![Imagen7](/img22.png)
+
+* **Metodo GET XLSX:**
+
+![Imagen8](/img23.png)
